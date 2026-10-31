@@ -1,0 +1,35 @@
+{
+  "id": "./",
+  "name": "Gestor de Gastos",
+  "short_name": "Gastos",
+  "description": "Controle mensal de faturamento e gastos fixos e variáveis, com vencimentos e alertas.",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "start_url": "./?source=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f3d2e",
+  "theme_color": "#0f3d2e",
+  "categories": ["finance", "productivity"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Novo gasto",
+      "short_name": "Gasto",
+      "url": "./?acao=novo-gasto",
+      "icons": [{ "src": "icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Novo faturamento",
+      "short_name": "Faturamento",
+      "url": "./?acao=novo-faturamento",
+      "icons": [{ "src": "icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}
