@@ -344,6 +344,8 @@ details.table-view th:first-child, details.table-view td:first-child { text-alig
 
 .menu-list { display:grid; gap:8px; }
 .menu-list .btn { justify-content:flex-start; width:100%; }
+.notif-box { display:grid; gap:8px; }
+.notif-box .btn.sm { justify-self:start; width:auto; }
 
 .toast {
   position:fixed; left:50%; bottom: calc(90px + env(safe-area-inset-bottom)); z-index:60;
@@ -606,6 +608,13 @@ details.table-view th:first-child, details.table-view td:first-child { text-alig
   <h2 id="menuTitle">Opções</h2>
   <div class="menu-list">
     <button class="btn" id="btnInstall" hidden>Instalar app no celular</button>
+    <div class="notif-box">
+      <label class="switch">
+        <span class="switch-text"><strong>Avisos de vencimento</strong><small id="notifStatus">Notifica 2 dias antes e no dia do vencimento</small></span>
+        <input type="checkbox" id="notifToggle">
+      </label>
+      <button class="btn sm secondary" id="btnTestNotif" type="button" hidden>Enviar notificação de teste</button>
+    </div>
     <button class="btn secondary" id="btnTheme">Alternar tema claro/escuro</button>
     <button class="btn secondary" id="btnExport">Exportar backup (.json)</button>
     <button class="btn secondary" id="btnImport">Importar backup</button>
@@ -680,6 +689,7 @@ function load() {
   } catch { return emptyState(); }
 }
 function save() {
+  syncAgenda();
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
   catch { toast("Não foi possível salvar no navegador."); }
 }
@@ -1297,6 +1307,7 @@ function togglePago(id) {
     toast("Pagamento desmarcado.", () => { x.pagos[key] = antes; save(); render(); });
   } else {
     x.pagos[key] = hojeISO();
+    fecharNotificacao(x.id, key);
     save(); render();
     toast(`“${x.descricao}” marcado como pago.`);
   }
@@ -1431,6 +1442,119 @@ render();
   if (acao === "novo-faturamento") openForm("receita");
   if (acao) history.replaceState(null, "", location.pathname);
 })();
+
+/* ---------- Avisos de vencimento ---------- */
+const NOTIF_KEY = "gestor-gastos:avisos";
+const notifAtivo = () => { try { return localStorage.getItem(NOTIF_KEY) === "on"; } catch { return false; } };
+const temSW = "serviceWorker" in navigator && location.protocol !== "file:";
+const suportaNotif = temSW && "Notification" in window;
+
+/** O service worker não lê localStorage: copia o necessário para o Cache Storage */
+function syncAgenda() {
+  if (!temSW || !("caches" in window)) return Promise.resolve();
+  const gastos = state.gastos
+    .filter(g => g.vencDia)
+    .map(({ id, descricao, valor, fixo, inicio, fim, meses, vencDia, pagos }) => ({ id, descricao, valor, fixo, inicio, fim, meses, vencDia, pagos }));
+  return caches.open("gg-dados")
+    .then(c => c.put("./agenda.json", new Response(JSON.stringify({ ativo: notifAtivo(), gastos }), { headers: { "Content-Type": "application/json" } })))
+    .catch(() => {});
+}
+function pedirVerificacao() {
+  if (!temSW || !notifAtivo()) return;
+  syncAgenda().then(() => navigator.serviceWorker.ready).then(reg => reg.active && reg.active.postMessage({ type: "CHECK_VENCIMENTOS" })).catch(() => {});
+}
+function fecharNotificacao(id, key) {
+  if (!temSW) return;
+  navigator.serviceWorker.getRegistration().then(reg => reg && reg.getNotifications({ tag: `venc-${id}-${key}` }))
+    .then(ns => (ns || []).forEach(n => n.close())).catch(() => {});
+}
+async function statusSegundoPlano() {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    if (!("periodicSync" in reg)) return "indisponivel";
+    const st = await navigator.permissions.query({ name: "periodic-background-sync" });
+    return st.state === "granted" ? "ok" : "sem-permissao";
+  } catch { return "indisponivel"; }
+}
+async function registrarSegundoPlano(ligar) {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    if (!("periodicSync" in reg)) return;
+    if (!ligar) return reg.periodicSync.unregister("vencimentos");
+    if ((await statusSegundoPlano()) === "ok") await reg.periodicSync.register("vencimentos", { minInterval: 12 * 60 * 60 * 1000 });
+  } catch {}
+}
+async function atualizarUINotif() {
+  const tog = $("#notifToggle"), st = $("#notifStatus");
+  if (!suportaNotif) {
+    tog.checked = false; tog.disabled = true;
+    st.textContent = location.protocol === "file:" ? "Disponível no app instalado (não ao abrir o arquivo direto)." : "Este navegador não suporta notificações.";
+    return;
+  }
+  const negado = Notification.permission === "denied";
+  tog.checked = notifAtivo() && Notification.permission === "granted";
+  $("#btnTestNotif").hidden = !tog.checked;
+  if (negado) { st.textContent = "Notificações bloqueadas. Libere em Configurações do Android → Apps → Gastos → Notificações."; return; }
+  if (!tog.checked) { st.textContent = "Notifica 2 dias antes e no dia do vencimento."; return; }
+  const bg = await statusSegundoPlano();
+  st.textContent = bg === "ok"
+    ? "Ativo · verificação em segundo plano ligada (o Android decide o horário)."
+    : "Ativo · os avisos aparecem quando o app é aberto (instale o app para checagem em segundo plano).";
+}
+$("#notifToggle").addEventListener("change", async e => {
+  if (e.target.checked) {
+    const perm = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+    if (perm !== "granted") { try { localStorage.setItem(NOTIF_KEY, "off"); } catch {} toast("Permissão de notificação negada."); return atualizarUINotif(); }
+    try { localStorage.setItem(NOTIF_KEY, "on"); } catch {}
+    await registrarSegundoPlano(true);
+    await syncAgenda();
+    toast("Avisos de vencimento ativados.");
+    pedirVerificacao();
+  } else {
+    try { localStorage.setItem(NOTIF_KEY, "off"); } catch {}
+    await registrarSegundoPlano(false);
+    await syncAgenda();
+    toast("Avisos desativados.");
+  }
+  atualizarUINotif();
+});
+$("#btnTestNotif").onclick = async () => {
+  const reg = await navigator.serviceWorker.ready;
+  await reg.showNotification("Vence em 2 dias: Exemplo", {
+    body: "R$ 123,45 · assim chegarão os avisos de vencimento",
+    icon: "./icon-192.png", badge: "./badge-96.png", tag: "teste",
+  });
+};
+$("#btnMenu").addEventListener("click", atualizarUINotif);
+
+/** Abre um mês e, se pedido, marca o gasto como pago (vindo da notificação) */
+function abrirDeNotificacao({ id, key, pagar }) {
+  if (key && /^\d{4}-\d{2}$/.test(key)) current = key;
+  if (pagar && id) {
+    const x = state.gastos.find(g => g.id === id);
+    if (x && !(x.pagos && x.pagos[current])) {
+      x.pagos = x.pagos || {};
+      x.pagos[current] = hojeISO();
+      save();
+      toast(`“${x.descricao}” marcado como pago.`);
+    }
+  }
+  closeSheet();
+  render();
+}
+(() => {
+  const q = new URLSearchParams(location.search);
+  if (q.has("mes") || q.has("pagar")) {
+    abrirDeNotificacao({ id: q.get("pagar"), key: q.get("mes"), pagar: q.has("pagar") });
+    history.replaceState(null, "", location.pathname);
+  }
+})();
+if (temSW) {
+  navigator.serviceWorker.addEventListener("message", e => { if (e.data && e.data.type === "ABRIR") abrirDeNotificacao(e.data); });
+  // checa vencimentos ao abrir o app e sempre que ele volta para a tela
+  syncAgenda().then(pedirVerificacao);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") pedirVerificacao(); });
+}
 
 // Pede ao navegador para não apagar os dados automaticamente quando faltar espaço
 if (navigator.storage && navigator.storage.persist) {
