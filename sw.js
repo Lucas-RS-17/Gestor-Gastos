@@ -3,18 +3,18 @@
    - Ao publicar uma nova versão, ALTERE a constante VERSION abaixo:
      o app detecta a mudança e oferece "Atualizar".
    Os dados do usuário NÃO ficam aqui: ficam no localStorage do navegador. */
-const VERSION = "v1.0.0";
+const VERSION = "v1.0.1";
 const CACHE = `gestor-gastos-${VERSION}`;
 const ASSETS = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png",
-  "./icons/icon-maskable-192.png",
-  "./icons/icon-maskable-512.png",
-  "./icons/apple-touch-icon.png",
-  "./icons/favicon-32.png",
+  "./icon-192.png",
+  "./icon-512.png",
+  "./icon-maskable-192.png",
+  "./icon-maskable-512.png",
+  "./apple-touch-icon.png",
+  "./favicon-32.png",
 ];
 
 self.addEventListener("install", (event) => {
